@@ -1,0 +1,130 @@
+.stockTable {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: var(--white);
+    border: 1px solid var(--border-gray);
+    border-radius: 1.6rem;
+    overflow: hidden;
+}
+
+.stockTable th {
+    text-align: left;
+    padding: 1.2rem 1.6rem;
+    font-size: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--text-gray);
+    background-color: var(--most-soft-green);
+}
+
+.stockTable td {
+    padding: 1.2rem 1.6rem;
+    border-top: 1px solid var(--border-gray);
+    font-size: 1.2rem;
+    color: var(--black);
+    vertical-align: middle;
+}
+
+.stockRowExpired {
+    background-color: var(--soft-red);
+}
+
+.stockRowName {
+    display: block;
+    font-weight: 600;
+}
+
+.stockRowLote {
+    display: block;
+    font-size: 1rem;
+    color: var(--text-gray);
+}
+
+.stockRowExpiration {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    border-radius: 999px;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.stockRowExpiration.valid {
+    background-color: var(--softer-green);
+    color: var(--solid-green);
+}
+
+.stockRowExpiration.warning {
+    background-color: var(--soft-yellow);
+    color: var(--text-yellow);
+}
+
+.stockRowExpiration.expired {
+    background-color: var(--soft-red);
+    color: var(--solid-red);
+}
+
+.stockRowActions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.stockRowQuantityInput {
+    width: 5.6rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border-gray);
+    border-radius: 0.8rem;
+    font-size: 1.1rem;
+}
+
+.stockRowSubtypeSelect {
+    padding: 0.5rem 0.4rem;
+    border: 1px solid var(--border-gray);
+    border-radius: 0.8rem;
+    font-size: 1.1rem;
+    background-color: var(--white);
+}
+
+.stockRowActionButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 2.8rem;
+    height: 2.8rem;
+    border: none;
+    border-radius: 0.8rem;
+    cursor: pointer;
+    color: var(--white);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.stockRowActionButton:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.stockRowActionButton:not(:disabled):active {
+    transform: scale(0.95);
+}
+
+.stockRowActionButton.entry {
+    background-color: var(--solid-green);
+}
+
+.stockRowActionButton.exit {
+    background-color: var(--text-yellow);
+}
+
+.stockRowActionButton.delete {
+    background-color: var(--solid-red);
+}
+
+.stockTableEmpty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-gray);
+    font-size: 1.2rem;
+}

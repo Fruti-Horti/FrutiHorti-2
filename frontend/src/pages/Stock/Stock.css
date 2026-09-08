@@ -20,3 +20,9 @@
     padding: 0rem 2rem;
     gap: 1.6rem;
 }
+
+.stockTableWrapper {
+    width: 120rem;
+    margin: 0 auto;
+    padding: 2rem;
+}

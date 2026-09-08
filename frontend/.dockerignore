@@ -1,0 +1,13 @@
+node_modules
+dist
+npm-debug.log
+.env
+.env.*
+!.env.example
+.gitnode_modules
+dist
+npm-debug.log
+.env
+.env.*
+!.env.example
+.git

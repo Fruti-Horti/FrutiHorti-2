@@ -1,0 +1,96 @@
+.productFormOverlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background-color: rgba(27, 27, 26, 0.5);
+    z-index: 100;
+}
+
+.productFormModal {
+    width: 48rem;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow-y: auto;
+
+    background-color: var(--white);
+    border-radius: 1.6rem;
+    padding: 2.4rem;
+}
+
+.productFormHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.6rem;
+}
+
+.productFormHeader h2 {
+    font-family: 'Lora', serif;
+    font-size: 1.8rem;
+    color: var(--black);
+}
+
+.productFormClose {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 3rem;
+    height: 3rem;
+    border: none;
+    border-radius: 50%;
+    background-color: var(--most-soft-gray);
+    cursor: pointer;
+    color: var(--heavy-gray);
+}
+
+.productFormBody {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+}
+
+.productFormBody label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--heavy-gray);
+}
+
+.productFormBody input,
+.productFormBody select {
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--border-gray);
+    border-radius: 0.8rem;
+    font-size: 1.2rem;
+    color: var(--black);
+}
+
+.productFormRow {
+    display: flex;
+    gap: 1.2rem;
+}
+
+.productFormRow label {
+    flex: 1;
+}
+
+.productFormError {
+    padding: 0.8rem 1rem;
+    border-radius: 0.8rem;
+    background-color: var(--soft-red);
+    color: var(--solid-red);
+    font-size: 1.1rem;
+}
+
+.productFormFooter {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.8rem;
+}

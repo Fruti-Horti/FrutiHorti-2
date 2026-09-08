@@ -13,3 +13,11 @@
     align-items: center;
     gap: 1rem;
 }
+
+.homepageStatus {
+    display: block;
+    width: 120rem;
+    margin: 0 auto;
+    padding: 2rem;
+    text-align: center;
+}
