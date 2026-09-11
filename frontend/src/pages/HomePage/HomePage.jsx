@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import './HomePage.css';
 
 import TitleLayout from "../../layouts/TitleLayout/TitleLayout.jsx";
@@ -5,29 +6,72 @@ import SearchLayout from "../../layouts/SearchLayout/SearchLayout.jsx";
 import FoodCard from "../../components/FoodCard/FoodCard.jsx";
 import FooterLayout from '../../layouts/FooterLayout/FooterLayout.jsx';
 
-const mockProducts = [
-    { id: 1, nome: "Banana Prata", categoria: "Fruta", quantidadeEstoque: 42, dataValidade: "2026-09-05" },
-    { id: 2, nome: "Maçã Gala", categoria: "Fruta", quantidadeEstoque: 30, dataValidade: "2026-09-12" },
-    { id: 3, nome: "Morango", categoria: "Fruta", quantidadeEstoque: 8, dataValidade: "2026-09-02" },
-    { id: 4, nome: "Cenoura", categoria: "Legume", quantidadeEstoque: 55, dataValidade: "2026-09-08" },
-    { id: 5, nome: "Alface Crespa", categoria: "Verdura", quantidadeEstoque: 20, dataValidade: "2026-09-01" },
-    { id: 6, nome: "Couve Manteiga", categoria: "Verdura", quantidadeEstoque: 18, dataValidade: "2026-09-04" },
-    { id: 7, nome: "Feijão Carioca", categoria: "Grão", quantidadeEstoque: 60, dataValidade: "2027-02-26" },
-    { id: 8, nome: "Tomate Italiano", categoria: "Legume", quantidadeEstoque: 0, dataValidade: "2026-08-20" },
-    { id: 9, nome: "Arroz Integral", categoria: "Grão", quantidadeEstoque: 0, dataValidade: "2026-08-18" },
-];
+import { Text } from "../../styles/globalStyles.js";
+import { listProducts, mapProductFromApi } from "../../services/productsApi.js";
 
 const HomePage = () => {
+    const [products, setProducts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [search, setSearch] = useState("");
+    const [category, setCategory] = useState("Todas");
+
+    useEffect(() => {
+        let isMounted = true;
+
+        listProducts()
+            .then((items) => {
+                if (isMounted) setProducts(items.map(mapProductFromApi));
+            })
+            .catch((err) => {
+                if (isMounted) setError(err.message);
+            })
+            .finally(() => {
+                if (isMounted) setLoading(false);
+            });
+
+        return () => { isMounted = false; };
+    }, []);
+
+    const filteredProducts = useMemo(() => {
+        return products.filter((product) => {
+            const matchesCategory = category === "Todas" || product.categoria === category;
+            const matchesSearch = product.nome.toLowerCase().includes(search.toLowerCase());
+            return matchesCategory && matchesSearch;
+        });
+    }, [products, category, search]);
+
     return (
         <div className="homepageApp">
             <TitleLayout/>
-            <SearchLayout/>
+            <SearchLayout
+                searchValue={search}
+                onSearchChange={setSearch}
+                activeCategory={category}
+                onCategoryChange={setCategory}
+            />
 
-            <div className="productGrid">
-                {mockProducts.map((product) => (
-                    <FoodCard key={product.id} {...product} />
-                ))}
-            </div>
+            {loading && (
+                <Text className="homepageStatus" fontSize="1.2rem">Carregando produtos...</Text>
+            )}
+
+            {!loading && error && (
+                <Text className="homepageStatus" fontSize="1.2rem" color="var(--solid-red)">
+                    Não foi possível carregar os produtos: {error}
+                </Text>
+            )}
+
+            {!loading && !error && filteredProducts.length === 0 && (
+                <Text className="homepageStatus" fontSize="1.2rem">Nenhum produto encontrado.</Text>
+            )}
+
+            {!loading && !error && filteredProducts.length > 0 && (
+                <div className="productGrid">
+                    {filteredProducts.map((product) => (
+                        <FoodCard key={product.id} {...product} />
+                    ))}
+                </div>
+            )}
 
             <FooterLayout />
         </div>

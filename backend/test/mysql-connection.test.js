@@ -11,5 +11,5 @@ test('database config reads MySQL settings from environment', () => {
   assert.equal(config.connection.port, 3306);
   assert.equal(config.connection.database, 'hortifruti');
   assert.equal(config.connection.user, 'root');
-  assert.equal(config.connection.password, 'ShowPasswors');
+  assert.equal(config.connection.password, '');
 });
