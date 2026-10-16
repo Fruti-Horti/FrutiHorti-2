@@ -1,4 +1,4 @@
-const database = require('../database');
+const categoryService = require('../services/categoryService');
 const { sendJson } = require('../httpUtils');
 
 async function health(req, res) {
@@ -6,7 +6,7 @@ async function health(req, res) {
 }
 
 async function listCategories(req, res) {
-  const items = await database.listCategories();
+  const items = await categoryService.listCategories();
   sendJson(res, 200, { items });
 }
 
