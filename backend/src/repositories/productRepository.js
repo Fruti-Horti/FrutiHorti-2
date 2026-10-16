@@ -1,4 +1,5 @@
 const database = require('../database');
+const { describeProduct } = require('../productStatus');
 
 const PRODUCT_SELECT = `
   SELECT
@@ -24,13 +25,13 @@ const PRODUCT_SELECT = `
 async function listProducts() {
   const executor = await database.initDatabase();
   const [rows] = await executor.execute(`${PRODUCT_SELECT} ORDER BY p.id ASC`);
-  return rows;
+  return rows.map((row) => describeProduct(row));
 }
 
 async function findProductById(productId, connection) {
   const executor = connection || (await database.initDatabase());
   const [rows] = await executor.execute(`${PRODUCT_SELECT} WHERE p.id = ?`, [productId]);
-  return rows[0] || null;
+  return rows[0] ? describeProduct(rows[0]) : null;
 }
 
 async function lockProductForUpdate(connection, productId) {

@@ -1,3 +1,7 @@
+const { ValidationError, PayloadTooLargeError } = require('./errors');
+
+const MAX_BODY_BYTES = 1024 * 1024;
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
@@ -20,24 +24,47 @@ function sendHtml(res, statusCode, html) {
   res.end(html);
 }
 
+function parseJsonText(rawData) {
+  if (!rawData) {
+    return {};
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawData);
+  } catch {
+    throw new ValidationError('Corpo da requisição não é um JSON válido');
+  }
+
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ValidationError('Corpo da requisição deve ser um objeto JSON');
+  }
+
+  return parsed;
+}
+
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
     let rawData = '';
+    let tooLarge = false;
 
     req.on('data', (chunk) => {
+      if (tooLarge) return;
+
       rawData += chunk;
+      if (Buffer.byteLength(rawData) > MAX_BODY_BYTES) {
+        tooLarge = true;
+        reject(new PayloadTooLargeError());
+      }
     });
 
     req.on('end', () => {
-      if (!rawData) {
-        resolve({});
-        return;
-      }
+      if (tooLarge) return;
 
       try {
-        resolve(JSON.parse(rawData));
+        resolve(parseJsonText(rawData));
       } catch (error) {
-        reject(new Error('Corpo da requisição não é um JSON válido'));
+        reject(error);
       }
     });
 
@@ -47,4 +74,4 @@ function parseJsonBody(req) {
   });
 }
 
-module.exports = { CORS_HEADERS, sendJson, sendHtml, parseJsonBody };
+module.exports = { CORS_HEADERS, sendJson, sendHtml, parseJsonText, parseJsonBody };

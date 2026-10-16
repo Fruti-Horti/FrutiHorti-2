@@ -6,11 +6,27 @@ async function createStock(connection, productId, { quantity, minimumQuantity, l
   );
 }
 
+// Only fields that are present are written; omitted fields keep their stored values,
+// and an explicit null location clears it.
 async function updateStockDetails(connection, productId, { minimumQuantity, location }) {
-  await connection.execute(
-    'UPDATE estoque SET quantidade_minima = COALESCE(?, quantidade_minima), localizacao = COALESCE(?, localizacao) WHERE produto_id = ?',
-    [minimumQuantity, location, productId]
-  );
+  const assignments = [];
+  const values = [];
+
+  if (minimumQuantity !== undefined) {
+    assignments.push('quantidade_minima = ?');
+    values.push(minimumQuantity);
+  }
+
+  if (location !== undefined) {
+    assignments.push('localizacao = ?');
+    values.push(location);
+  }
+
+  if (assignments.length === 0) {
+    return;
+  }
+
+  await connection.execute(`UPDATE estoque SET ${assignments.join(', ')} WHERE produto_id = ?`, [...values, productId]);
 }
 
 async function lockProductStock(connection, productId) {

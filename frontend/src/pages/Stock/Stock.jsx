@@ -72,6 +72,7 @@ const Stock = () => {
         await loadStock();
     };
 
+    // Errors thrown by these handlers are shown next to the product row (StockTable).
     const handleDelete = async (id) => {
         if (!window.confirm("Excluir este produto? Essa ação não pode ser desfeita.")) return;
         await deleteProduct(id);

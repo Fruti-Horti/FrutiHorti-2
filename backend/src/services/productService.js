@@ -37,8 +37,8 @@ async function createProduct(payload) {
 
     await stockRepository.createStock(connection, productId, {
       quantity: payload.quantidade_estoque,
-      minimumQuantity: payload.quantidade_minima || 0,
-      location: payload.localizacao || null,
+      minimumQuantity: payload.quantidade_minima ?? 0,
+      location: payload.localizacao ?? null,
     });
 
     if (payload.quantidade_estoque > 0) {

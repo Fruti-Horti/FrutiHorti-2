@@ -24,4 +24,16 @@ class BusinessRuleError extends AppError {
   }
 }
 
-module.exports = { AppError, ValidationError, NotFoundError, BusinessRuleError };
+class ConflictError extends AppError {
+  constructor(message) {
+    super(message, 409);
+  }
+}
+
+class PayloadTooLargeError extends AppError {
+  constructor(message = 'Corpo da requisição excede o tamanho máximo permitido') {
+    super(message, 413);
+  }
+}
+
+module.exports = { AppError, ValidationError, NotFoundError, BusinessRuleError, ConflictError, PayloadTooLargeError };

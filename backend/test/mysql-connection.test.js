@@ -13,3 +13,10 @@ test('database config reads MySQL settings from environment', () => {
   assert.equal(config.connection.user, 'root');
   assert.equal(config.connection.password, '');
 });
+
+test('database config returns DATE columns as strings and does not allow multiple statements', () => {
+  const config = db.getDbConfig();
+
+  assert.deepEqual(config.connection.dateStrings, ['DATE']);
+  assert.equal(config.connection.multipleStatements, undefined);
+});

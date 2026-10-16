@@ -2,22 +2,13 @@ const database = require('../database');
 const productRepository = require('../repositories/productRepository');
 const stockRepository = require('../repositories/stockRepository');
 const movementService = require('./movementService');
-const { NotFoundError, BusinessRuleError, ValidationError } = require('../errors');
-const { calculateStatusId, isSaleBlockedByExpiration, daysUntilExpiration } = require('../productStatus');
+const { NotFoundError } = require('../errors');
+const { calculateStatusId } = require('../productStatus');
+const { assertStockExitAllowed } = require('../stockRules');
 
-const LOW_STOCK_OR_EXPIRING_SOON_DAYS = 3;
-
-function buildAlert(product) {
-  const days = daysUntilExpiration(product.data_validade);
-  const isLowStock = product.quantidade_estoque <= product.quantidade_minima;
-  const isExpiringSoon = days <= LOW_STOCK_OR_EXPIRING_SOON_DAYS;
-
-  return { ...product, dias_para_vencer: days, estoque_baixo: isLowStock, proximo_do_vencimento: isExpiringSoon };
-}
-
+// Expiration and low-stock fields are derived on every product read (see describeProduct).
 async function getStockSummary() {
-  const products = await productRepository.listProducts();
-  return products.map(buildAlert);
+  return productRepository.listProducts();
 }
 
 async function getLockedStock(connection, productId) {
@@ -65,12 +56,12 @@ async function registerStockExit(productId, { quantidade: quantity, motivo: reas
     const current = await getLockedStock(connection, productId);
     const previousQuantity = current.quantidade || 0;
 
-    if (subtype === 'venda' && isSaleBlockedByExpiration(current.data_validade)) {
-      throw new BusinessRuleError('Não é permitido registrar venda de produto vencido');
-    }
-    if (quantity > previousQuantity) {
-      throw new ValidationError('Quantidade em estoque insuficiente para essa saída');
-    }
+    assertStockExitAllowed({
+      subtipo: subtype,
+      dataValidade: current.data_validade,
+      currentQuantity: previousQuantity,
+      quantidade: quantity,
+    });
 
     return applyStockMovement(connection, current, {
       productId,

@@ -1,17 +1,20 @@
 // Critical business rule: a product whose expiration date is on or before today cannot be sold.
+// Unit-level date edge cases live in productStatus.test.js and stockRules.test.js; these tests cover
+// the full sale path (handler -> service -> rule) and that a rejected sale writes nothing.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Readable } = require('node:stream');
 const stockService = require('../src/services/stockService');
 const stockHandlers = require('../src/handlers/stock');
-const { STATUS_IDS, isSaleBlockedByExpiration } = require('../src/productStatus');
+const { STATUS_IDS } = require('../src/productStatus');
 const { BusinessRuleError } = require('../src/errors');
 const { MOCK_PRODUCT_ID, prepareStock } = require('./helpers/stockMocks');
 
 const TODAY = '2026-10-16';
 const YESTERDAY = '2026-10-15';
 const TOMORROW = '2026-10-17';
-const FROZEN_NOW = new Date(`${TODAY}T12:00:00Z`);
+// Noon in the store's time zone (America/Sao_Paulo), so "today" is unambiguous.
+const FROZEN_NOW = new Date(`${TODAY}T12:00:00-03:00`);
 const EXPIRED_SALE_MESSAGE = 'Não é permitido registrar venda de produto vencido';
 const NON_SALE_EXIT_SUBTYPES = ['perda', 'ajuste', 'outro'];
 
@@ -52,35 +55,6 @@ function createResponseRecorder() {
   };
 }
 
-test('isSaleBlockedByExpiration blocks products that expired before the reference date', () => {
-  assert.equal(isSaleBlockedByExpiration(YESTERDAY, FROZEN_NOW), true);
-  assert.equal(isSaleBlockedByExpiration('2000-01-01', FROZEN_NOW), true);
-});
-
-test('isSaleBlockedByExpiration blocks products that expire on the reference date', () => {
-  assert.equal(isSaleBlockedByExpiration(TODAY, FROZEN_NOW), true);
-});
-
-test('isSaleBlockedByExpiration allows products that expire after the reference date', () => {
-  assert.equal(isSaleBlockedByExpiration(TOMORROW, FROZEN_NOW), false);
-  assert.equal(isSaleBlockedByExpiration('2099-01-01', FROZEN_NOW), false);
-});
-
-test('isSaleBlockedByExpiration ignores the time of day of the reference date', () => {
-  assert.equal(isSaleBlockedByExpiration(TODAY, new Date(`${TODAY}T00:00:00Z`)), true);
-  assert.equal(isSaleBlockedByExpiration(TODAY, new Date(`${TODAY}T23:59:59Z`)), true);
-  assert.equal(isSaleBlockedByExpiration(TOMORROW, new Date(`${TODAY}T23:59:59Z`)), false);
-});
-
-test('isSaleBlockedByExpiration accepts Date values as returned by the MySQL driver', () => {
-  assert.equal(isSaleBlockedByExpiration(new Date(`${TODAY}T00:00:00Z`), FROZEN_NOW), true);
-  assert.equal(isSaleBlockedByExpiration(new Date(`${TOMORROW}T00:00:00Z`), FROZEN_NOW), false);
-});
-
-test('isSaleBlockedByExpiration throws on an invalid expiration date instead of allowing the sale', () => {
-  assert.throws(() => isSaleBlockedByExpiration('not-a-date', FROZEN_NOW), /Data inválida/);
-});
-
 test('selling a product that expired yesterday is rejected without changing stock or history', async (t) => {
   freezeClock(t);
   const state = prepareStock(t, { expirationDate: YESTERDAY });
@@ -93,10 +67,11 @@ test('selling a product that expires today is rejected without changing stock or
   await assertSaleRejectedWithoutWrites(state);
 });
 
-test('selling a product whose expiration date comes from MySQL as a Date is rejected', async (t) => {
+test('selling a product with an invalid stored expiration date fails instead of being allowed', async (t) => {
   freezeClock(t);
-  const state = prepareStock(t, { expirationDate: new Date(`${TODAY}T00:00:00Z`) });
-  await assertSaleRejectedWithoutWrites(state);
+  const state = prepareStock(t, { expirationDate: 'not-a-date' });
+  await assert.rejects(sellTwoUnits(), /Data inválida/);
+  assert.equal(state.writes, 0);
 });
 
 test('selling a product that expires tomorrow is allowed', async (t) => {

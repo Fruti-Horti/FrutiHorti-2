@@ -10,7 +10,8 @@ function getDbConfig() {
       user: process.env.DB_USERNAME || 'root',
       password: process.env.DB_PASSWORD || '',
       charset: process.env.DB_COLLATION || 'utf8mb4_general_ci',
-      multipleStatements: true,
+      // DATE columns come back as 'YYYY-MM-DD' strings, so no time zone shifts the day.
+      dateStrings: ['DATE'],
     },
   };
 }
