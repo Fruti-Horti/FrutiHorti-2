@@ -5,7 +5,9 @@
     "main": "src/server.js",
     "scripts": {
         "start": "node src/server.js",
-        "dev": "node --watch src/server.js"
+        "dev": "node --watch src/server.js",
+        "lint": "eslint .",
+        "test": "node --test"
     },
     "engines": {
         "node": ">=22"
@@ -13,5 +15,10 @@
     "dependencies": {
         "dotenv": "^17.4.2",
         "mysql2": "^3.24.3"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "eslint": "^10.13.0",
+        "globals": "^17.13.0"
     }
 }

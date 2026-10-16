@@ -31,6 +31,22 @@ test('validateProductPayload rejects a malformed date', () => {
   assert.match(validateProductPayload(payload), /data_validade/);
 });
 
+test('validateProductPayload rejects an impossible calendar date', () => {
+  const payload = { ...validProduct, data_validade: '2026-02-31' };
+  assert.match(validateProductPayload(payload), /data_validade/);
+  assert.match(validateProductPayload({ ...validProduct, data_entrada: '2026-02-30' }), /data_entrada/);
+});
+
+test('validateProductPayload rejects an expiration date before the entry date', () => {
+  const payload = { ...validProduct, data_entrada: '2026-06-01', data_validade: '2026-01-01' };
+  assert.match(validateProductPayload(payload), /anterior/);
+});
+
+test('validateProductPayload accepts an expiration date equal to the entry date', () => {
+  const payload = { ...validProduct, data_entrada: '2026-09-05', data_validade: '2026-09-05' };
+  assert.equal(validateProductPayload(payload), null);
+});
+
 test('validateProductPayload rejects a negative price', () => {
   const payload = { ...validProduct, preco_unitario: -1 };
   assert.match(validateProductPayload(payload), /preco_unitario/);
@@ -52,6 +68,19 @@ test('normalizeProductPayload trims strings and coerces numbers', () => {
   assert.equal(normalized.preco_unitario, 7.5);
   assert.equal(normalized.quantidade_estoque, 40);
   assert.equal(normalized.perecivel, true);
+});
+
+test('normalizeProductPayload leaves omitted quantidade_minima and localizacao undefined on update', () => {
+  const { quantidade_estoque, ...updatePayload } = validProduct;
+  const normalized = normalizeProductPayload(updatePayload, { isUpdate: true });
+  assert.equal(normalized.quantidade_minima, undefined);
+  assert.equal(normalized.localizacao, undefined);
+});
+
+test('normalizeProductPayload keeps sent quantidade_minima and turns an empty localizacao into null', () => {
+  const normalized = normalizeProductPayload({ ...validProduct, quantidade_minima: 20, localizacao: '  ' });
+  assert.equal(normalized.quantidade_minima, 20);
+  assert.equal(normalized.localizacao, null);
 });
 
 test('validateStockMovementPayload accepts a positive integer quantity', () => {
