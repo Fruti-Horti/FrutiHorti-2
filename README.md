@@ -6,6 +6,18 @@ O **FrutiHorti** é um projeto desenvolvido pela equipe **VidaPelaHota**, utiliz
 
 Este documento apresenta as convenções de desenvolvimento, o padrão de commits e o fluxo de trabalho definido pela equipe para o desenvolvimento, revisão e integração das tarefas do projeto.
 
+### 1.1. Executando com Docker
+
+As credenciais do MySQL não ficam no `docker-compose.yml`; elas são lidas de um arquivo `.env` na raiz do projeto (ignorado pelo git).
+
+1. Copie o modelo: `cp .env.example .env`
+2. Defina senhas próprias em `MYSQL_ROOT_PASSWORD` e `MYSQL_PASSWORD`.
+3. Suba os serviços: `docker compose up --build`
+
+Se alguma variável obrigatória não estiver definida, o `docker compose` falha informando qual está faltando.
+
+> Observação: o MySQL só aplica essas credenciais na criação do volume. Se o volume `mysql_data` já existir com as credenciais antigas, recrie-o com `docker compose down -v` (isso apaga os dados locais).
+
 ## 2. Organização das Branches
 
 O projeto utiliza três níveis de branches:
