@@ -2,21 +2,11 @@ const database = require('../database');
 const { sendJson, parseJsonBody } = require('../httpUtils');
 const { validateStockMovementPayload } = require('../validators');
 const { ValidationError } = require('../errors');
-const { daysUntilExpiration } = require('../productStatus');
 
-const LOW_STOCK_OR_EXPIRING_SOON_DAYS = 3;
-
-function buildAlert(product) {
-  const dias = daysUntilExpiration(product.data_validade);
-  const estoqueBaixo = product.quantidade_estoque <= product.quantidade_minima;
-  const proximoDoVencimento = dias <= LOW_STOCK_OR_EXPIRING_SOON_DAYS;
-
-  return { ...product, dias_para_vencer: dias, estoque_baixo: estoqueBaixo, proximo_do_vencimento: proximoDoVencimento };
-}
-
+// Expiration and low-stock fields are derived on every product read (see describeProduct).
 async function getStockSummary(req, res) {
-  const products = await database.listProducts();
-  sendJson(res, 200, { items: products.map(buildAlert) });
+  const items = await database.listProducts();
+  sendJson(res, 200, { items });
 }
 
 async function listMovements(req, res, [productId]) {

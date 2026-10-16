@@ -1,6 +1,7 @@
 const mysql = require('mysql2/promise');
-const { NotFoundError, BusinessRuleError, ValidationError } = require('./errors');
-const { calculateStatusId, isExpired } = require('./productStatus');
+const { NotFoundError, ConflictError } = require('./errors');
+const { calculateStatusId, describeProduct, getStoreToday, toDateString } = require('./productStatus');
+const { assertStockExitAllowed } = require('./stockRules');
 
 function getDbConfig() {
   return {
@@ -12,7 +13,8 @@ function getDbConfig() {
       user: process.env.DB_USERNAME || 'root',
       password: process.env.DB_PASSWORD || '',
       charset: process.env.DB_COLLATION || 'utf8mb4_general_ci',
-      multipleStatements: true,
+      // DATE columns come back as 'YYYY-MM-DD' strings, so no time zone shifts the day.
+      dateStrings: ['DATE'],
     },
   };
 }
@@ -76,7 +78,7 @@ const PRODUCT_SELECT = `
 async function listProducts() {
   const database = await initDatabase();
   const [rows] = await database.execute(`${PRODUCT_SELECT} ORDER BY p.id ASC`);
-  return rows;
+  return rows.map((row) => describeProduct(row));
 }
 
 async function getProductById(productId, executor) {
@@ -87,7 +89,7 @@ async function getProductById(productId, executor) {
     throw new NotFoundError('Produto não encontrado');
   }
 
-  return rows[0];
+  return describeProduct(rows[0]);
 }
 
 async function listCategories() {
@@ -111,13 +113,33 @@ async function ensureCategory(connection, categoryName) {
   return result.insertId;
 }
 
+// A lot may be shared by several products, so saving one product must never change the lot's dates.
+function assertSameLoteDates(codigoLote, existingLote, { dataValidade, dataEntrada }) {
+  const storedValidade = toDateString(existingLote.data_validade);
+  if (storedValidade !== dataValidade) {
+    throw new ConflictError(
+      `O lote ${codigoLote} já existe com validade ${storedValidade}. Use outro código de lote ou a mesma validade.`
+    );
+  }
+
+  const storedEntrada = toDateString(existingLote.data_entrada);
+  if (dataEntrada && storedEntrada !== dataEntrada) {
+    throw new ConflictError(
+      `O lote ${codigoLote} já existe com data de entrada ${storedEntrada}. Use outro código de lote ou a mesma data.`
+    );
+  }
+}
+
 async function ensureLote(connection, { codigoLote, dataValidade, dataEntrada }) {
   const normalizedCode = String(codigoLote).trim();
-  const entrada = dataEntrada || new Date().toISOString().slice(0, 10);
+  const entrada = dataEntrada || getStoreToday();
 
-  const [rows] = await connection.execute('SELECT id FROM lotes WHERE codigo_lote = ? LIMIT 1', [normalizedCode]);
+  const [rows] = await connection.execute(
+    'SELECT id, data_entrada, data_validade FROM lotes WHERE codigo_lote = ? LIMIT 1',
+    [normalizedCode]
+  );
   if (rows.length > 0) {
-    await connection.execute('UPDATE lotes SET data_validade = ? WHERE id = ?', [dataValidade, rows[0].id]);
+    assertSameLoteDates(normalizedCode, rows[0], { dataValidade, dataEntrada });
     return rows[0].id;
   }
 
@@ -152,7 +174,7 @@ async function createProduct(payload) {
     await connection.execute(
       `INSERT INTO estoque (produto_id, quantidade, quantidade_minima, localizacao)
        VALUES (?, ?, ?, ?)`,
-      [productId, payload.quantidade_estoque, payload.quantidade_minima || 0, payload.localizacao || null]
+      [productId, payload.quantidade_estoque, payload.quantidade_minima ?? 0, payload.localizacao ?? null]
     );
 
     if (payload.quantidade_estoque > 0) {
@@ -199,15 +221,33 @@ async function updateProduct(productId, payload) {
       [payload.nome, categoryId, loteId, statusId, payload.preco_unitario, payload.perecivel ? 1 : 0, productId]
     );
 
-    if (payload.quantidade_minima !== undefined || payload.localizacao !== undefined) {
-      await connection.execute(
-        'UPDATE estoque SET quantidade_minima = COALESCE(?, quantidade_minima), localizacao = COALESCE(?, localizacao) WHERE produto_id = ?',
-        [payload.quantidade_minima, payload.localizacao, productId]
-      );
-    }
+    await updateStockSettings(connection, productId, payload);
 
     return getProductById(productId, connection);
   });
+}
+
+// Only fields present in the payload are written; omitted fields keep their stored values,
+// and an explicit null/empty localizacao clears it.
+async function updateStockSettings(connection, productId, { quantidade_minima, localizacao }) {
+  const assignments = [];
+  const values = [];
+
+  if (quantidade_minima !== undefined) {
+    assignments.push('quantidade_minima = ?');
+    values.push(quantidade_minima);
+  }
+
+  if (localizacao !== undefined) {
+    assignments.push('localizacao = ?');
+    values.push(localizacao);
+  }
+
+  if (assignments.length === 0) {
+    return;
+  }
+
+  await connection.execute(`UPDATE estoque SET ${assignments.join(', ')} WHERE produto_id = ?`, [...values, productId]);
 }
 
 async function deleteProduct(productId) {
@@ -290,13 +330,12 @@ async function registerStockExit(productId, { quantidade, motivo, subtipo }) {
     const current = await lockProductStockRow(connection, productId);
     const previousQuantity = current.quantidade || 0;
 
-    if (subtipo === 'venda' && isExpired(current.data_validade)) {
-      throw new BusinessRuleError('Não é permitido registrar venda de produto vencido');
-    }
-
-    if (quantidade > previousQuantity) {
-      throw new ValidationError('Quantidade em estoque insuficiente para essa saída');
-    }
+    assertStockExitAllowed({
+      subtipo,
+      dataValidade: current.data_validade,
+      currentQuantity: previousQuantity,
+      quantidade,
+    });
 
     const newQuantity = previousQuantity - quantidade;
 

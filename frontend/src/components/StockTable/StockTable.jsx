@@ -15,27 +15,49 @@ function useRowState() {
     const [quantity, setQuantity] = useState('');
     const [subtipo, setSubtipo] = useState('venda');
     const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState(null);
 
     const parsedQuantity = Number(quantity);
     const isQuantityValid = Number.isInteger(parsedQuantity) && parsedQuantity > 0;
 
-    const runAction = async (action) => {
-        if (!isQuantityValid || submitting) return;
+    // On failure the API message is shown and the typed quantity is kept so the user can retry.
+    const runRowAction = async (action, { clearQuantity }) => {
+        if (submitting) return;
         setSubmitting(true);
+        setError(null);
         try {
-            await action(parsedQuantity);
-            setQuantity('');
+            await action();
+            if (clearQuantity) setQuantity('');
+        } catch (err) {
+            setError(err.message);
         } finally {
             setSubmitting(false);
         }
     };
 
-    return { quantity, setQuantity, subtipo, setSubtipo, submitting, isQuantityValid, runAction };
+    const runQuantityAction = (action) => {
+        if (!isQuantityValid) return;
+        return runRowAction(() => action(parsedQuantity), { clearQuantity: true });
+    };
+
+    const runDeleteAction = (action) => runRowAction(action, { clearQuantity: false });
+
+    return {
+        quantity,
+        setQuantity,
+        subtipo,
+        setSubtipo,
+        submitting,
+        error,
+        isQuantityValid,
+        runQuantityAction,
+        runDeleteAction,
+    };
 }
 
 const StockTableRow = ({ product, onEntry, onExit, onDelete }) => {
     const row = useRowState();
-    const expiration = getExpirationStatus(product.dataValidade);
+    const expiration = getExpirationStatus(product);
 
     return (
         <tr className={expiration.variant === 'expired' ? 'stockRowExpired' : ''}>
@@ -74,7 +96,7 @@ const StockTableRow = ({ product, onEntry, onExit, onDelete }) => {
                         type="button"
                         className="stockRowActionButton entry"
                         disabled={!row.isQuantityValid || row.submitting}
-                        onClick={() => row.runAction((qty) => onEntry(product.id, { quantidade: qty }))}
+                        onClick={() => row.runQuantityAction((qty) => onEntry(product.id, { quantidade: qty }))}
                         title="Registrar entrada"
                     >
                         <Plus size={14} />
@@ -84,7 +106,7 @@ const StockTableRow = ({ product, onEntry, onExit, onDelete }) => {
                         type="button"
                         className="stockRowActionButton exit"
                         disabled={!row.isQuantityValid || row.submitting}
-                        onClick={() => row.runAction((qty) => onExit(product.id, { quantidade: qty, subtipo: row.subtipo }))}
+                        onClick={() => row.runQuantityAction((qty) => onExit(product.id, { quantidade: qty, subtipo: row.subtipo }))}
                         title="Registrar saída"
                     >
                         <Minus size={14} />
@@ -93,12 +115,17 @@ const StockTableRow = ({ product, onEntry, onExit, onDelete }) => {
                     <button
                         type="button"
                         className="stockRowActionButton delete"
-                        onClick={() => onDelete(product.id)}
+                        disabled={row.submitting}
+                        onClick={() => row.runDeleteAction(() => onDelete(product.id))}
                         title="Excluir produto"
                     >
                         <Trash2 size={14} />
                     </button>
                 </div>
+
+                {row.error && (
+                    <p className="stockRowError" role="alert">{row.error}</p>
+                )}
             </td>
         </tr>
     );

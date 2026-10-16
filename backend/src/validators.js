@@ -1,4 +1,5 @@
-const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const { isValidDateString } = require('./productStatus');
+
 const STOCK_MOVEMENT_SUBTYPES = ['venda', 'perda', 'ajuste', 'outro'];
 
 const REQUIRED_FIELDS_ON_CREATE = [
@@ -19,6 +20,38 @@ function findMissingField(payload, requiredFields) {
   });
 }
 
+function validateProductDates(payload) {
+  const dataValidade = String(payload.data_validade).trim();
+  if (!isValidDateString(dataValidade)) {
+    return 'data_validade deve ser uma data válida no formato YYYY-MM-DD';
+  }
+
+  if (!payload.data_entrada) {
+    return null;
+  }
+
+  const dataEntrada = String(payload.data_entrada).trim();
+  if (!isValidDateString(dataEntrada)) {
+    return 'data_entrada deve ser uma data válida no formato YYYY-MM-DD';
+  }
+
+  // YYYY-MM-DD strings compare chronologically.
+  if (dataValidade < dataEntrada) {
+    return 'data_validade não pode ser anterior à data_entrada';
+  }
+
+  return null;
+}
+
+function normalizeOptionalText(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const text = value === null ? '' : String(value).trim();
+  return text || null;
+}
+
 function validateProductPayload(payload, { isUpdate = false } = {}) {
   if (!payload || typeof payload !== 'object') {
     return 'Payload é obrigatório';
@@ -30,12 +63,9 @@ function validateProductPayload(payload, { isUpdate = false } = {}) {
     return `Campo ${missingField} é obrigatório`;
   }
 
-  if (!DATE_REGEX.test(String(payload.data_validade))) {
-    return 'data_validade deve estar no formato YYYY-MM-DD';
-  }
-
-  if (payload.data_entrada && !DATE_REGEX.test(String(payload.data_entrada))) {
-    return 'data_entrada deve estar no formato YYYY-MM-DD';
+  const dateError = validateProductDates(payload);
+  if (dateError) {
+    return dateError;
   }
 
   const price = Number(payload.preco_unitario);
@@ -47,7 +77,7 @@ function validateProductPayload(payload, { isUpdate = false } = {}) {
     return 'quantidade_estoque deve ser um número inteiro não negativo';
   }
 
-  if (payload.quantidade_minima !== undefined) {
+  if (payload.quantidade_minima !== undefined && payload.quantidade_minima !== null) {
     const minima = Number(payload.quantidade_minima);
     if (!Number.isInteger(minima) || minima < 0) {
       return 'quantidade_minima deve ser um número inteiro não negativo';
@@ -66,8 +96,12 @@ function normalizeProductPayload(payload, { isUpdate = false } = {}) {
     data_entrada: payload.data_entrada ? String(payload.data_entrada).trim() : undefined,
     preco_unitario: Number(payload.preco_unitario),
     perecivel: payload.perecivel !== false,
-    quantidade_minima: payload.quantidade_minima !== undefined ? Number(payload.quantidade_minima) : 0,
-    localizacao: payload.localizacao ? String(payload.localizacao).trim() : null,
+    // undefined means "not sent": updates keep the stored value instead of resetting it.
+    quantidade_minima:
+      payload.quantidade_minima !== undefined && payload.quantidade_minima !== null
+        ? Number(payload.quantidade_minima)
+        : undefined,
+    localizacao: normalizeOptionalText(payload.localizacao),
   };
 
   if (!isUpdate) {
