@@ -17,9 +17,14 @@ const EXPIRATION_ICONS = {
     expired: CircleX,
 };
 
-const FoodCard = ({ nome, categoria, quantidadeEstoque, dataValidade }) => {
-    const { label: expirationLabel, variant: expirationVariant } = getExpirationStatus(dataValidade);
-    const isExpired = expirationVariant === "expired";
+const FoodCard = ({ nome, categoria, quantidadeEstoque, dataValidade, status, diasParaVencer, proximoDoVencimento }) => {
+    const { label: expirationLabel, variant: expirationVariant } = getExpirationStatus({
+        status,
+        diasParaVencer,
+        proximoDoVencimento,
+        dataValidade,
+    });
+    const isExpired = status === "vencido";
     const isAvailable = !isExpired && quantidadeEstoque > 0;
 
     const CategoryIcon = CATEGORY_ICONS[categoria] ?? Sprout;

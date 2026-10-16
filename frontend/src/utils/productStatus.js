@@ -1,31 +1,27 @@
-export function getExpirationStatus(dataValidade) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+// Formats a 'YYYY-MM-DD' string as DD/MM/YYYY without going through Date,
+// so the browser's time zone can never shift the day.
+export function formatDateOnly(dateString) {
+    if (!dateString) return '';
+    const [year, month, day] = String(dateString).slice(0, 10).split('-');
+    return `${day}/${month}/${year}`;
+}
 
-    const validade = new Date(dataValidade);
-    validade.setHours(0, 0, 0, 0);
-
-    const diffDays = Math.round((validade - today) / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) {
+// The API derives status, diasParaVencer and proximoDoVencimento in the store's time zone;
+// this function only turns those fields into a label.
+export function getExpirationStatus({ status, diasParaVencer, proximoDoVencimento, dataValidade }) {
+    if (diasParaVencer < 0) {
         return { variant: "expired", label: "Vencido" };
     }
 
-    if (diffDays === 0) {
-        return { variant: "warning", label: "Vence hoje" };
+    if (diasParaVencer === 0) {
+        const variant = status === 'vencido' ? "expired" : "warning";
+        return { variant, label: "Vence hoje" };
     }
 
-    if (diffDays === 1) {
-        return { variant: "warning", label: "Vence amanhã" };
+    if (proximoDoVencimento) {
+        const label = diasParaVencer === 1 ? "Vence amanhã" : `Vence em ${diasParaVencer} dias`;
+        return { variant: "warning", label };
     }
 
-    if (diffDays <= 2) {
-        return { variant: "warning", label: `Vence em ${diffDays} dias` };
-    }
-
-    const formatted = validade.toLocaleDateString("pt-BR", {
-        day: "2-digit", month: "2-digit", year: "numeric"
-    });
-
-    return { variant: "valid", label: `Válido até ${formatted}` };
+    return { variant: "valid", label: `Válido até ${formatDateOnly(dataValidade)}` };
 }

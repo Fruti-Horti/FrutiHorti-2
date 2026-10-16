@@ -81,6 +81,11 @@
     flex: 1;
 }
 
+.productFormHint {
+    font-size: 1.1rem;
+    color: var(--text-gray);
+}
+
 .productFormError {
     padding: 0.8rem 1rem;
     border-radius: 0.8rem;
