@@ -1,104 +1,94 @@
-const { initDatabase, withTransaction } = require('../connection');
-const { NotFoundError, ValidationError } = require('../errors');
-const { SALE_SUBTYPE, assertProductCanBeSold, assertStockEntryAllowed, planStockExit } = require('../stockRules');
-const {
-  listProductLots,
-  findLatestProductLot,
-  findOrCreateLot,
-  addLotQuantity,
-  subtractLotQuantity,
-  getProductStockTotal,
-  syncStockTotal,
-} = require('./lotRepository');
-const { insertMovement, listProductMovements } = require('./movementRepository');
-const { getProductById, lockProduct } = require('./productRepository');
+// Product-level stock (estoque) and per-batch balances (estoque_lote).
+// estoque.quantidade is kept equal to the sum of the product's batch balances.
 
-async function resolveEntryLot(connection, productId, { codigoLote, dataValidade, dataEntrada }) {
-  if (codigoLote) {
-    return findOrCreateLot(connection, { codigoLote, dataValidade, dataEntrada });
+const BATCH_STOCK_SELECT = `
+  SELECT el.produto_id, l.id AS lote_id, l.codigo_lote, l.data_entrada, l.data_validade, el.quantidade
+  FROM estoque_lote el
+  INNER JOIN lotes l ON l.id = el.lote_id
+`;
+
+async function createStock(connection, productId, { quantity, minimumQuantity, location }) {
+  await connection.execute(
+    `INSERT INTO estoque (produto_id, quantidade, quantidade_minima, localizacao)
+     VALUES (?, ?, ?, ?)`,
+    [productId, quantity, minimumQuantity, location]
+  );
+}
+
+// Only fields that are present are written; omitted fields keep their stored values,
+// and an explicit null location clears it.
+async function updateStockDetails(connection, productId, { minimumQuantity, location }) {
+  const assignments = [];
+  const values = [];
+
+  if (minimumQuantity !== undefined) {
+    assignments.push('quantidade_minima = ?');
+    values.push(minimumQuantity);
   }
 
-  const latestLot = await findLatestProductLot(connection, productId);
-  if (!latestLot) {
-    throw new ValidationError('Produto sem lote cadastrado; informe codigo_lote e data_validade');
-  }
-  return latestLot;
-}
-
-async function registerStockEntry(productId, { quantidade, motivo, codigoLote, dataValidade, dataEntrada }) {
-  return withTransaction(async (connection) => {
-    await lockProduct(connection, productId);
-    const lot = await resolveEntryLot(connection, productId, { codigoLote, dataValidade, dataEntrada });
-    assertStockEntryAllowed(lot);
-
-    const previousQuantity = await getProductStockTotal(connection, productId);
-    await addLotQuantity(connection, productId, lot.lote_id, quantidade);
-    const newQuantity = await syncStockTotal(connection, productId);
-
-    await insertMovement(connection, {
-      produtoId: productId,
-      loteId: lot.lote_id,
-      tipo: 'entrada',
-      subtipo: null,
-      quantidade,
-      quantidadeAnterior: previousQuantity,
-      quantidadeAtual: newQuantity,
-      motivo,
-    });
-
-    return getProductById(productId, connection);
-  });
-}
-
-async function lockExitCandidateLots(connection, productId, codigoLote) {
-  const lots = await listProductLots(connection, productId, { forUpdate: true });
-  if (!codigoLote) {
-    return lots;
+  if (location !== undefined) {
+    assignments.push('localizacao = ?');
+    values.push(location);
   }
 
-  const selectedLots = lots.filter((lot) => lot.codigo_lote === codigoLote);
-  if (selectedLots.length === 0) {
-    throw new NotFoundError(`Lote ${codigoLote} não encontrado para este produto`);
+  if (assignments.length === 0) {
+    return;
   }
-  return selectedLots;
+
+  await connection.execute(`UPDATE estoque SET ${assignments.join(', ')} WHERE produto_id = ?`, [...values, productId]);
 }
 
-// Each consumed lot gets its own movement, so the history shows exactly which lots left stock.
-async function registerStockExit(productId, { quantidade, motivo, subtipo, codigoLote }) {
-  return withTransaction(async (connection) => {
-    const product = await lockProduct(connection, productId);
-    if (subtipo === SALE_SUBTYPE) {
-      assertProductCanBeSold(product.status);
-    }
-
-    const candidateLots = await lockExitCandidateLots(connection, productId, codigoLote);
-    const allocations = planStockExit(candidateLots, { quantidade, subtipo });
-
-    let runningQuantity = await getProductStockTotal(connection, productId);
-    for (const allocation of allocations) {
-      await subtractLotQuantity(connection, productId, allocation.lote_id, allocation.quantidade);
-      await insertMovement(connection, {
-        produtoId: productId,
-        loteId: allocation.lote_id,
-        tipo: 'saida',
-        subtipo,
-        quantidade: allocation.quantidade,
-        quantidadeAnterior: runningQuantity,
-        quantidadeAtual: runningQuantity - allocation.quantidade,
-        motivo,
-      });
-      runningQuantity -= allocation.quantidade;
-    }
-
-    await syncStockTotal(connection, productId);
-    return getProductById(productId, connection);
-  });
+async function updateQuantity(connection, productId, quantity) {
+  await connection.execute('UPDATE estoque SET quantidade = ? WHERE produto_id = ?', [quantity, productId]);
 }
 
-async function listMovements(productId) {
-  const database = await initDatabase();
-  await getProductById(productId, database);
-  return listProductMovements(database, productId);
+async function listBatchStock(executor) {
+  const [rows] = await executor.execute(
+    `${BATCH_STOCK_SELECT} ORDER BY el.produto_id ASC, l.data_validade ASC, l.id ASC`
+  );
+  return rows;
 }
 
-module.exports = { registerStockEntry, registerStockExit, listMovements };
+async function listProductBatchStock(executor, productId, { forUpdate = false } = {}) {
+  const lock = forUpdate ? 'FOR UPDATE' : '';
+  const [rows] = await executor.execute(
+    `${BATCH_STOCK_SELECT} WHERE el.produto_id = ? ORDER BY l.data_validade ASC, l.id ASC ${lock}`,
+    [productId]
+  );
+  return rows;
+}
+
+// The batch that receives an entry when no batch code is given: the one with the latest expiration.
+async function findLatestProductBatch(connection, productId) {
+  const [rows] = await connection.execute(
+    `${BATCH_STOCK_SELECT} WHERE el.produto_id = ? ORDER BY l.data_validade DESC, l.id DESC LIMIT 1`,
+    [productId]
+  );
+  return rows[0] || null;
+}
+
+async function addBatchQuantity(connection, productId, batchId, quantity) {
+  await connection.execute(
+    `INSERT INTO estoque_lote (produto_id, lote_id, quantidade) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE quantidade = quantidade + ?`,
+    [productId, batchId, quantity, quantity]
+  );
+}
+
+async function subtractBatchQuantity(connection, productId, batchId, quantity) {
+  await connection.execute(
+    'UPDATE estoque_lote SET quantidade = quantidade - ? WHERE produto_id = ? AND lote_id = ?',
+    [quantity, productId, batchId]
+  );
+}
+
+module.exports = {
+  createStock,
+  updateStockDetails,
+  updateQuantity,
+  listBatchStock,
+  listProductBatchStock,
+  findLatestProductBatch,
+  addBatchQuantity,
+  subtractBatchQuantity,
+};

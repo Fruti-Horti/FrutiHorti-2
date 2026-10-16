@@ -1,19 +1,54 @@
-// Single entry point for data access used by the handlers.
-const { getDbConfig, initDatabase } = require('./connection');
-const productRepository = require('./repositories/productRepository');
-const stockRepository = require('./repositories/stockRepository');
+const mysql = require('mysql2/promise');
 
-module.exports = {
-  getDbConfig,
-  initDatabase,
-  listProducts: productRepository.listProducts,
-  getProductById: productRepository.getProductById,
-  listCategories: productRepository.listCategories,
-  createProduct: productRepository.createProduct,
-  updateProduct: productRepository.updateProduct,
-  setProductActive: productRepository.setProductActive,
-  deleteProduct: productRepository.deleteProduct,
-  registerStockEntry: stockRepository.registerStockEntry,
-  registerStockExit: stockRepository.registerStockExit,
-  listMovements: stockRepository.listMovements,
-};
+function getDbConfig() {
+  return {
+    client: 'mysql',
+    connection: {
+      host: process.env.DB_HOST || '127.0.0.1',
+      port: Number(process.env.DB_PORT || 3306),
+      database: process.env.DB_DATABASE || 'hortifruti',
+      user: process.env.DB_USERNAME || 'root',
+      password: process.env.DB_PASSWORD || '',
+      charset: process.env.DB_COLLATION || 'utf8mb4_general_ci',
+      // DATE columns come back as 'YYYY-MM-DD' strings, so no time zone shifts the day.
+      dateStrings: ['DATE'],
+    },
+  };
+}
+
+let pool;
+
+async function initDatabase() {
+  if (!pool) {
+    const config = getDbConfig();
+    pool = mysql.createPool(config.connection);
+
+    const connection = await pool.getConnection();
+    try {
+      await connection.query('SELECT 1');
+    } finally {
+      connection.release();
+    }
+  }
+
+  return pool;
+}
+
+async function withTransaction(callback) {
+  const database = await initDatabase();
+  const connection = await database.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+module.exports = { getDbConfig, initDatabase, withTransaction };

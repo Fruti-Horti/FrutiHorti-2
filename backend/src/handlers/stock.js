@@ -1,17 +1,10 @@
-const database = require('../database');
+const stockService = require('../services/stockService');
 const { sendJson, parseJsonBody } = require('../httpUtils');
 const { validateStockMovementPayload, normalizeStockMovementPayload } = require('../validators');
 const { ValidationError } = require('../errors');
 
-// Expiration, lot and low-stock fields are derived on every product read (see describeProduct).
-// The stock screen also lists inactive products, so they can be reactivated.
 async function getStockSummary(req, res) {
-  const items = await database.listProducts({ includeInactive: true });
-  sendJson(res, 200, { items });
-}
-
-async function listMovements(req, res, [productId]) {
-  const items = await database.listMovements(Number(productId));
+  const items = await stockService.getStockSummary();
   sendJson(res, 200, { items });
 }
 
@@ -24,9 +17,10 @@ async function readStockMovement(req, options) {
   return normalizeStockMovementPayload(body);
 }
 
+// codigo_lote is optional: entries without it go to the product's latest batch.
 async function registerStockEntry(req, res, [productId]) {
   const { quantidade, motivo, codigoLote, dataValidade, dataEntrada } = await readStockMovement(req);
-  const item = await database.registerStockEntry(Number(productId), {
+  const item = await stockService.registerStockEntry(Number(productId), {
     quantidade,
     motivo,
     codigoLote,
@@ -37,11 +31,12 @@ async function registerStockEntry(req, res, [productId]) {
   sendJson(res, 200, { item });
 }
 
+// codigo_lote is optional: exits without it consume batches in FEFO order.
 async function registerStockExit(req, res, [productId]) {
   const { quantidade, subtipo, motivo, codigoLote } = await readStockMovement(req, { requireSubtipo: true });
-  const item = await database.registerStockExit(Number(productId), { quantidade, subtipo, motivo, codigoLote });
+  const item = await stockService.registerStockExit(Number(productId), { quantidade, subtipo, motivo, codigoLote });
 
   sendJson(res, 200, { item });
 }
 
-module.exports = { getStockSummary, listMovements, registerStockEntry, registerStockExit };
+module.exports = { getStockSummary, registerStockEntry, registerStockExit };
