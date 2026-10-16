@@ -28,6 +28,11 @@ function daysUntilExpiration(dataValidade, referenceDate = new Date()) {
   return Math.round((expiration.getTime() - reference.getTime()) / msPerDay);
 }
 
+// Critical rule: sales are blocked when the expiration date is on or before the reference date.
+function isSaleBlockedByExpiration(dataValidade, referenceDate = new Date()) {
+  return daysUntilExpiration(dataValidade, referenceDate) <= 0;
+}
+
 function calculateStatusId({ dataValidade, quantidade }, referenceDate = new Date()) {
   if (isExpired(dataValidade, referenceDate)) {
     return STATUS_IDS.VENCIDO;
@@ -40,4 +45,11 @@ function calculateStatusId({ dataValidade, quantidade }, referenceDate = new Dat
   return STATUS_IDS.ATIVO;
 }
 
-module.exports = { STATUS_IDS, toDateOnly, isExpired, daysUntilExpiration, calculateStatusId };
+module.exports = {
+  STATUS_IDS,
+  toDateOnly,
+  isExpired,
+  daysUntilExpiration,
+  isSaleBlockedByExpiration,
+  calculateStatusId,
+};

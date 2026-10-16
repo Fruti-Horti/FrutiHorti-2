@@ -3,7 +3,7 @@ const productRepository = require('../repositories/productRepository');
 const stockRepository = require('../repositories/stockRepository');
 const movementService = require('./movementService');
 const { NotFoundError, BusinessRuleError, ValidationError } = require('../errors');
-const { calculateStatusId, isExpired, daysUntilExpiration } = require('../productStatus');
+const { calculateStatusId, isSaleBlockedByExpiration, daysUntilExpiration } = require('../productStatus');
 
 const LOW_STOCK_OR_EXPIRING_SOON_DAYS = 3;
 
@@ -65,7 +65,7 @@ async function registerStockExit(productId, { quantidade: quantity, motivo: reas
     const current = await getLockedStock(connection, productId);
     const previousQuantity = current.quantidade || 0;
 
-    if (subtype === 'venda' && isExpired(current.data_validade)) {
+    if (subtype === 'venda' && isSaleBlockedByExpiration(current.data_validade)) {
       throw new BusinessRuleError('Não é permitido registrar venda de produto vencido');
     }
     if (quantity > previousQuantity) {
