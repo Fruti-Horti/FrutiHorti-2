@@ -35,9 +35,28 @@ async function updateProduct(req, res, [productId]) {
   sendJson(res, 200, { item });
 }
 
+// Products with stock history are inactivated instead of deleted; the response says which happened.
 async function deleteProduct(req, res, [productId]) {
-  await productService.deleteProduct(Number(productId));
-  sendJson(res, 200, { deleted: true });
+  const result = await productService.deleteProduct(Number(productId));
+  sendJson(res, 200, result);
 }
 
-module.exports = { listProducts, getProduct, createProduct, updateProduct, deleteProduct };
+async function activateProduct(req, res, [productId]) {
+  const item = await productService.setProductActive(Number(productId), true);
+  sendJson(res, 200, { item });
+}
+
+async function deactivateProduct(req, res, [productId]) {
+  const item = await productService.setProductActive(Number(productId), false);
+  sendJson(res, 200, { item });
+}
+
+module.exports = {
+  listProducts,
+  getProduct,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  activateProduct,
+  deactivateProduct,
+};

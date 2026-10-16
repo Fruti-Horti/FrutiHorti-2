@@ -1,6 +1,6 @@
 async function findBatchByCode(connection, batchCode) {
   const [rows] = await connection.execute(
-    'SELECT id, data_entrada, data_validade FROM lotes WHERE codigo_lote = ? LIMIT 1',
+    'SELECT id, codigo_lote, data_entrada, data_validade FROM lotes WHERE codigo_lote = ? LIMIT 1',
     [batchCode]
   );
   return rows[0] || null;

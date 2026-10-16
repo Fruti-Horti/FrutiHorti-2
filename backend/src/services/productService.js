@@ -1,54 +1,86 @@
 const database = require('../database');
 const productRepository = require('../repositories/productRepository');
 const stockRepository = require('../repositories/stockRepository');
+const movementRepository = require('../repositories/movementRepository');
 const categoryService = require('./categoryService');
 const batchService = require('./batchService');
 const movementService = require('./movementService');
-const { calculateStatusId } = require('../productStatus');
+const { STATUS_IDS, describeProduct } = require('../productStatus');
+const { assertStockEntryAllowed } = require('../stockRules');
 const { NotFoundError } = require('../errors');
 
-async function listProducts() {
-  return productRepository.listProducts();
+function groupBatchesByProduct(batchRows) {
+  const batchesByProduct = new Map();
+  for (const row of batchRows) {
+    const productBatches = batchesByProduct.get(row.produto_id) || [];
+    productBatches.push(row);
+    batchesByProduct.set(row.produto_id, productBatches);
+  }
+  return batchesByProduct;
+}
+
+// The public catalog hides inactive products; the stock screen lists them so they can be reactivated.
+async function listProducts({ includeInactive = false } = {}) {
+  const executor = await database.initDatabase();
+  const rows = await productRepository.listProducts(executor, { includeInactive });
+  const batchesByProduct = groupBatchesByProduct(await stockRepository.listBatchStock(executor));
+  return rows.map((row) => describeProduct(row, batchesByProduct.get(row.id) || []));
 }
 
 async function getProductById(productId, connection) {
-  const product = await productRepository.findProductById(productId, connection);
+  const executor = connection || (await database.initDatabase());
+  const product = await productRepository.findProductById(productId, executor);
+  if (!product) {
+    throw new NotFoundError('Produto não encontrado');
+  }
+
+  const batches = await stockRepository.listProductBatchStock(executor, productId);
+  return describeProduct(product, batches);
+}
+
+async function lockExistingProduct(connection, productId) {
+  const product = await productRepository.lockProductForUpdate(connection, productId);
   if (!product) {
     throw new NotFoundError('Produto não encontrado');
   }
   return product;
 }
 
-async function resolveProductReferences(connection, payload, quantity) {
-  const categoryId = await categoryService.ensureCategory(connection, payload.categoria);
-  const batchId = await batchService.ensureBatch(connection, {
-    batchCode: payload.codigo_lote,
-    expirationDate: payload.data_validade,
-    entryDate: payload.data_entrada,
-  });
-  const statusId = calculateStatusId({ dataValidade: payload.data_validade, quantidade: quantity });
-  return { payload, categoryId, batchId, statusId };
-}
-
 async function createProduct(payload) {
   return database.withTransaction(async (connection) => {
-    const references = await resolveProductReferences(connection, payload, payload.quantidade_estoque);
-    const productId = await productRepository.createProduct(connection, references);
+    const quantity = payload.quantidade_estoque;
+    const categoryId = await categoryService.ensureCategory(connection, payload.categoria);
+    const batch = await batchService.ensureBatch(connection, {
+      batchCode: payload.codigo_lote,
+      expirationDate: payload.data_validade,
+      entryDate: payload.data_entrada,
+    });
 
+    if (quantity > 0) {
+      assertStockEntryAllowed(batch);
+    }
+
+    const productId = await productRepository.createProduct(connection, {
+      payload,
+      categoryId,
+      statusId: STATUS_IDS.ATIVO,
+    });
     await stockRepository.createStock(connection, productId, {
-      quantity: payload.quantidade_estoque,
+      quantity,
       minimumQuantity: payload.quantidade_minima ?? 0,
       location: payload.localizacao ?? null,
     });
+    await stockRepository.addBatchQuantity(connection, productId, batch.id, quantity);
 
-    if (payload.quantidade_estoque > 0) {
+    if (quantity > 0) {
       await movementService.recordMovement(connection, {
         productId,
+        batchId: batch.id,
         type: 'entrada',
         subtype: null,
-        quantity: payload.quantidade_estoque,
+        quantity,
         previousQuantity: 0,
-        currentQuantity: payload.quantidade_estoque,
+        currentQuantity: quantity,
         reason: 'Cadastro inicial do produto',
       });
     }
@@ -57,15 +89,13 @@ async function createProduct(payload) {
   });
 }
 
+// Batches change only through stock entries; editing a product never touches them (RF-05).
 async function updateProduct(productId, payload) {
   return database.withTransaction(async (connection) => {
-    const product = await productRepository.lockProductForUpdate(connection, productId);
-    if (!product) {
-      throw new NotFoundError('Produto não encontrado');
-    }
+    await lockExistingProduct(connection, productId);
 
-    const references = await resolveProductReferences(connection, payload, product.quantidade_estoque || 0);
-    await productRepository.updateProduct(connection, productId, references);
+    const categoryId = await categoryService.ensureCategory(connection, payload.categoria);
+    await productRepository.updateProduct(connection, productId, { payload, categoryId });
 
     if (payload.quantidade_minima !== undefined || payload.localizacao !== undefined) {
       await stockRepository.updateStockDetails(connection, productId, {
@@ -78,12 +108,36 @@ async function updateProduct(productId, payload) {
   });
 }
 
-async function deleteProduct(productId) {
-  const deleted = await productRepository.deleteProduct(productId);
-  if (!deleted) {
-    throw new NotFoundError('Produto não encontrado');
-  }
-  return true;
+async function setProductActive(productId, active) {
+  return database.withTransaction(async (connection) => {
+    await lockExistingProduct(connection, productId);
+    await productRepository.updateProductStatus(connection, productId, active ? STATUS_IDS.ATIVO : STATUS_IDS.INATIVO);
+    return getProductById(productId, connection);
+  });
 }
 
-module.exports = { listProducts, getProductById, createProduct, updateProduct, deleteProduct };
+// A product with stock history is inactivated instead of deleted, so the history is kept (RF-10).
+async function deleteProduct(productId) {
+  return database.withTransaction(async (connection) => {
+    await lockExistingProduct(connection, productId);
+
+    const movementCount = await movementRepository.countMovements(connection, productId);
+    if (movementCount > 0) {
+      await productRepository.updateProductStatus(connection, productId, STATUS_IDS.INATIVO);
+      return { deleted: false, deactivated: true };
+    }
+
+    await productRepository.deleteProduct(connection, productId);
+    return { deleted: true, deactivated: false };
+  });
+}
+
+module.exports = {
+  listProducts,
+  getProductById,
+  lockExistingProduct,
+  createProduct,
+  updateProduct,
+  setProductActive,
+  deleteProduct,
+};

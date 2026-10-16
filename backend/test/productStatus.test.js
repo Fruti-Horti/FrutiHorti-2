@@ -2,12 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  STATUS_IDS,
   isValidDateString,
   getStoreToday,
   isExpired,
   daysUntilExpiration,
-  calculateStatusId,
+  sortLotsByExpiration,
+  selectReferenceLot,
   describeProduct,
 } = require('../src/productStatus');
 
@@ -56,51 +56,66 @@ test('isValidDateString rejects impossible calendar dates', () => {
   assert.equal(isValidDateString('05/09/2026'), false);
 });
 
-test('calculateStatusId marks expired products as vencido even with stock available', () => {
-  const statusId = calculateStatusId({ dataValidade: '2026-08-01', quantidade: 50 }, NOON_IN_BRASILIA);
-  assert.equal(statusId, STATUS_IDS.VENCIDO);
+const product = { id: 1, status: 'ativo', quantidade_minima: 10 };
+
+function lot(loteId, dataValidade, quantidade) {
+  return { lote_id: loteId, codigo_lote: `L${loteId}`, data_entrada: '2026-07-25', data_validade: dataValidade, quantidade };
+}
+
+test('sortLotsByExpiration orders lots by earliest expiration first', () => {
+  const sorted = sortLotsByExpiration([lot(1, '2026-08-20', 5), lot(2, '2026-08-05', 5), lot(3, '2026-08-05', 5)]);
+  assert.deepEqual(sorted.map((item) => item.lote_id), [2, 3, 1]);
 });
 
-test('calculateStatusId marks products with zero stock as esgotado', () => {
-  const statusId = calculateStatusId({ dataValidade: '2026-12-01', quantidade: 0 }, NOON_IN_BRASILIA);
-  assert.equal(statusId, STATUS_IDS.ESGOTADO);
+test('selectReferenceLot prefers the next sellable lot with stock', () => {
+  const sorted = sortLotsByExpiration([lot(1, '2026-08-01', 5), lot(2, '2026-08-09', 0), lot(3, '2026-08-20', 5)]);
+  assert.equal(selectReferenceLot(sorted, NOON_IN_BRASILIA).lote_id, 3);
 });
 
-test('calculateStatusId marks products with stock and valid date as ativo', () => {
-  const statusId = calculateStatusId({ dataValidade: '2026-12-01', quantidade: 10 }, NOON_IN_BRASILIA);
-  assert.equal(statusId, STATUS_IDS.ATIVO);
+test('selectReferenceLot falls back to the freshest lot when there is no stock', () => {
+  const sorted = sortLotsByExpiration([lot(1, '2026-08-01', 0), lot(2, '2026-08-20', 0)]);
+  assert.equal(selectReferenceLot(sorted, NOON_IN_BRASILIA).lote_id, 2);
 });
 
-const storedProduct = {
-  id: 1,
-  status: 'ativo',
-  data_entrada: '2026-07-25',
-  data_validade: '2026-08-01',
-  quantidade_estoque: 30,
-  quantidade_minima: 10,
-};
+test('describeProduct derives vencido at read time when all stock is expired', () => {
+  const described = describeProduct(product, [lot(1, '2026-08-01', 30)], NOON_IN_BRASILIA);
+  assert.equal(described.status, 'vencido');
+  assert.equal(described.dias_para_vencer, -1);
+  assert.equal(described.quantidade_vencida, 30);
+  assert.equal(described.proximo_do_vencimento, false);
+});
 
-test('describeProduct derives vencido at read time even if the stored status is ativo', () => {
-  const product = describeProduct(storedProduct, NOON_IN_BRASILIA);
-  assert.equal(product.status, 'vencido');
-  assert.equal(product.dias_para_vencer, -1);
-  assert.equal(product.proximo_do_vencimento, false);
+test('describeProduct stays ativo when an expired lot coexists with a valid one', () => {
+  const described = describeProduct(product, [lot(1, '2026-08-01', 5), lot(2, '2026-08-20', 25)], NOON_IN_BRASILIA);
+  assert.equal(described.status, 'ativo');
+  assert.equal(described.quantidade_estoque, 30);
+  assert.equal(described.quantidade_vencida, 5);
+  assert.equal(described.codigo_lote, 'L2');
+  assert.equal(described.data_validade, '2026-08-20');
+  assert.equal(described.lotes.length, 2);
 });
 
 test('describeProduct flags products expiring within the threshold', () => {
-  const product = describeProduct({ ...storedProduct, data_validade: '2026-08-04' }, NOON_IN_BRASILIA);
-  assert.equal(product.status, 'ativo');
-  assert.equal(product.dias_para_vencer, 2);
-  assert.equal(product.proximo_do_vencimento, true);
+  const described = describeProduct(product, [lot(1, '2026-08-04', 30)], NOON_IN_BRASILIA);
+  assert.equal(described.status, 'ativo');
+  assert.equal(described.dias_para_vencer, 2);
+  assert.equal(described.proximo_do_vencimento, true);
 });
 
-test('describeProduct flags low stock and esgotado', () => {
-  const product = describeProduct({ ...storedProduct, data_validade: '2026-12-01', quantidade_estoque: 0 }, NOON_IN_BRASILIA);
-  assert.equal(product.status, 'esgotado');
-  assert.equal(product.estoque_baixo, true);
+test('describeProduct marks a product without stock as esgotado with low stock', () => {
+  const described = describeProduct(product, [lot(1, '2026-12-01', 0)], NOON_IN_BRASILIA);
+  assert.equal(described.status, 'esgotado');
+  assert.equal(described.estoque_baixo, true);
 });
 
 test('describeProduct keeps an inactive product inactive', () => {
-  const product = describeProduct({ ...storedProduct, status: 'inativo' }, NOON_IN_BRASILIA);
-  assert.equal(product.status, 'inativo');
+  const described = describeProduct({ ...product, status: 'inativo' }, [lot(1, '2026-08-20', 30)], NOON_IN_BRASILIA);
+  assert.equal(described.status, 'inativo');
+});
+
+test('describeProduct handles a product without lots', () => {
+  const described = describeProduct(product, [], NOON_IN_BRASILIA);
+  assert.equal(described.status, 'esgotado');
+  assert.equal(described.data_validade, null);
+  assert.equal(described.dias_para_vencer, null);
 });

@@ -8,7 +8,8 @@ const productRepository = require('../src/repositories/productRepository');
 const batchService = require('../src/services/batchService');
 const categoryService = require('../src/services/categoryService');
 const movementService = require('../src/services/movementService');
-const { NotFoundError, ConflictError } = require('../src/errors');
+const { NotFoundError, ConflictError, ValidationError } = require('../src/errors');
+const { getStoreToday } = require('../src/productStatus');
 
 const EXISTING_BATCH = { id: 3, data_entrada: '2099-01-01', data_validade: '2099-02-01' };
 
@@ -20,8 +21,23 @@ test('an existing batch with the same dates is reused without creating another',
     return EXISTING_BATCH;
   });
   const create = t.mock.method(batchRepository, 'createBatch', async () => 4);
-  const batchId = await batchService.ensureBatch(connection, { batchCode: ' B-01 ', expirationDate: '2099-02-01' });
-  assert.equal(batchId, 3);
+  const batch = await batchService.ensureBatch(connection, { batchCode: ' B-01 ', expirationDate: '2099-02-01' });
+  assert.equal(batch.id, 3);
+  assert.equal(create.mock.callCount(), 0);
+});
+
+test('an existing batch can be referenced by its code alone', async (t) => {
+  t.mock.method(batchRepository, 'findBatchByCode', async () => EXISTING_BATCH);
+  const create = t.mock.method(batchRepository, 'createBatch', async () => 4);
+  const batch = await batchService.ensureBatch({}, { batchCode: 'B-01' });
+  assert.equal(batch.id, 3);
+  assert.equal(create.mock.callCount(), 0);
+});
+
+test('a new batch without an expiration date is rejected', async (t) => {
+  t.mock.method(batchRepository, 'findBatchByCode', async () => null);
+  const create = t.mock.method(batchRepository, 'createBatch', async () => 4);
+  await assert.rejects(batchService.ensureBatch({}, { batchCode: 'B-09' }), ValidationError);
   assert.equal(create.mock.callCount(), 0);
 });
 
@@ -43,18 +59,18 @@ test('a new batch keeps the supplied entry and expiration dates', async (t) => {
   const connection = {};
   t.mock.method(batchRepository, 'findBatchByCode', async () => null);
   const create = t.mock.method(batchRepository, 'createBatch', async () => 4);
-  assert.equal(await batchService.ensureBatch(connection, {
+  assert.deepEqual(await batchService.ensureBatch(connection, {
     batchCode: ' B-02 ', entryDate: '2099-01-01', expirationDate: '2099-02-01',
-  }), 4);
+  }), { id: 4, codigo_lote: 'B-02', data_entrada: '2099-01-01', data_validade: '2099-02-01' });
   assert.deepEqual(create.mock.calls[0].arguments, [connection, {
     batchCode: 'B-02', entryDate: '2099-01-01', expirationDate: '2099-02-01',
   }]);
 });
 
-test('a new batch defaults its entry date to the current UTC date', async (t) => {
+test('a new batch defaults its entry date to today in the store time zone', async (t) => {
   t.mock.method(batchRepository, 'findBatchByCode', async () => null);
   const create = t.mock.method(batchRepository, 'createBatch', async () => 4);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getStoreToday();
   await batchService.ensureBatch({}, { batchCode: 'B-03', expirationDate: '2099-02-01' });
   assert.equal(create.mock.calls[0].arguments[1].entryDate, today);
 });

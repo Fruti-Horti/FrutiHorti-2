@@ -6,7 +6,6 @@ const assert = require('node:assert/strict');
 const { Readable } = require('node:stream');
 const stockService = require('../src/services/stockService');
 const stockHandlers = require('../src/handlers/stock');
-const { STATUS_IDS } = require('../src/productStatus');
 const { BusinessRuleError } = require('../src/errors');
 const { MOCK_PRODUCT_ID, prepareStock } = require('./helpers/stockMocks');
 
@@ -80,7 +79,7 @@ test('selling a product that expires tomorrow is allowed', async (t) => {
   const product = await sellTwoUnits();
 
   assert.equal(product.quantidade_estoque, 8);
-  assert.equal(state.statusId, STATUS_IDS.ATIVO);
+  assert.equal(product.status, 'ativo');
   assert.equal(state.movements.length, 1);
   assert.equal(state.movements[0].subtype, 'venda');
 });
@@ -99,10 +98,10 @@ for (const subtype of NON_SALE_EXIT_SUBTYPES) {
   test(`expired products can still leave stock with the "${subtype}" subtype`, async (t) => {
     freezeClock(t);
     const state = prepareStock(t, { expirationDate: YESTERDAY });
-    await stockService.registerStockExit(MOCK_PRODUCT_ID, { quantidade: 2, subtipo: subtype });
+    const product = await stockService.registerStockExit(MOCK_PRODUCT_ID, { quantidade: 2, subtipo: subtype });
 
     assert.equal(state.quantity, 8);
-    assert.equal(state.statusId, STATUS_IDS.VENCIDO);
+    assert.equal(product.status, 'vencido');
     assert.equal(state.movements[0].subtype, subtype);
   });
 }

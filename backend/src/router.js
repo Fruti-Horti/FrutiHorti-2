@@ -12,6 +12,8 @@ const routes = [
   { method: 'GET', pattern: /^\/products\/(\d+)$/, handler: productHandlers.getProduct },
   { method: 'PUT', pattern: /^\/products\/(\d+)$/, handler: productHandlers.updateProduct },
   { method: 'DELETE', pattern: /^\/products\/(\d+)$/, handler: productHandlers.deleteProduct },
+  { method: 'POST', pattern: /^\/products\/(\d+)\/activate$/, handler: productHandlers.activateProduct },
+  { method: 'POST', pattern: /^\/products\/(\d+)\/deactivate$/, handler: productHandlers.deactivateProduct },
 
   { method: 'GET', pattern: /^\/stock$/, handler: stockHandlers.getStockSummary },
   { method: 'GET', pattern: /^\/products\/(\d+)\/movements$/, handler: movementHandlers.listMovements },
