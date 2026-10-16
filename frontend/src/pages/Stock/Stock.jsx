@@ -8,6 +8,7 @@ import Button from "../../components/Button/Button";
 import InfoCard from "../../components/InfoCard/InfoCard";
 import StockTable from "../../components/StockTable/StockTable.jsx";
 import ProductFormModal from "../../components/ProductFormModal/ProductFormModal.jsx";
+import StockEntryModal from "../../components/StockEntryModal/StockEntryModal.jsx";
 
 import { Text } from "../../styles/globalStyles";
 
@@ -18,6 +19,8 @@ import {
     registerStockEntry,
     registerStockExit,
     deleteProduct,
+    activateProduct,
+    deactivateProduct,
 } from "../../services/productsApi.js";
 
 const Stock = () => {
@@ -27,6 +30,7 @@ const Stock = () => {
     const [search, setSearch] = useState("");
     const [category, setCategory] = useState("Todas");
     const [isModalOpen, setModalOpen] = useState(false);
+    const [lotEntryProduct, setLotEntryProduct] = useState(null);
 
     const loadStock = () => {
         return getStockSummary()
@@ -50,9 +54,11 @@ const Stock = () => {
         });
     }, [products, category, search]);
 
-    const totalProducts = products.length;
-    const expiredCount = products.filter((product) => product.status === 'vencido').length;
-    const expiringSoonCount = products.filter(
+    // Inactive products stay in the table (to be reactivated) but out of the counters.
+    const activeProducts = products.filter((product) => product.status !== 'inativo');
+    const totalProducts = activeProducts.length;
+    const expiredCount = activeProducts.filter((product) => product.quantidadeVencida > 0).length;
+    const expiringSoonCount = activeProducts.filter(
         (product) => product.status !== 'vencido' && product.proximoDoVencimento
     ).length;
 
@@ -72,9 +78,27 @@ const Stock = () => {
         await loadStock();
     };
 
+    const handleLotEntry = async (id, payload) => {
+        await registerStockEntry(id, payload);
+        setLotEntryProduct(null);
+        await loadStock();
+    };
+
     // Errors thrown by these handlers are shown next to the product row (StockTable).
+    const handleToggleActive = async (product) => {
+        if (product.status === 'inativo') {
+            await activateProduct(product.id);
+        } else {
+            await deactivateProduct(product.id);
+        }
+        await loadStock();
+    };
+
     const handleDelete = async (id) => {
-        if (!window.confirm("Excluir este produto? Essa ação não pode ser desfeita.")) return;
+        const confirmed = window.confirm(
+            "Excluir este produto? Se ele tiver movimentações de estoque, será inativado e o histórico será mantido."
+        );
+        if (!confirmed) return;
         await deleteProduct(id);
         await loadStock();
     };
@@ -127,6 +151,8 @@ const Stock = () => {
                         onEntry={handleEntry}
                         onExit={handleExit}
                         onDelete={handleDelete}
+                        onLotEntry={setLotEntryProduct}
+                        onToggleActive={handleToggleActive}
                     />
                 )}
             </div>
@@ -135,6 +161,14 @@ const Stock = () => {
                 <ProductFormModal
                     onClose={() => setModalOpen(false)}
                     onSubmit={handleCreateProduct}
+                />
+            )}
+
+            {lotEntryProduct && (
+                <StockEntryModal
+                    product={lotEntryProduct}
+                    onClose={() => setLotEntryProduct(null)}
+                    onSubmit={handleLotEntry}
                 />
             )}
         </div>

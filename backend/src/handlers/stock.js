@@ -1,11 +1,12 @@
 const database = require('../database');
 const { sendJson, parseJsonBody } = require('../httpUtils');
-const { validateStockMovementPayload } = require('../validators');
+const { validateStockMovementPayload, normalizeStockMovementPayload } = require('../validators');
 const { ValidationError } = require('../errors');
 
-// Expiration and low-stock fields are derived on every product read (see describeProduct).
+// Expiration, lot and low-stock fields are derived on every product read (see describeProduct).
+// The stock screen also lists inactive products, so they can be reactivated.
 async function getStockSummary(req, res) {
-  const items = await database.listProducts();
+  const items = await database.listProducts({ includeInactive: true });
   sendJson(res, 200, { items });
 }
 
@@ -14,33 +15,31 @@ async function listMovements(req, res, [productId]) {
   sendJson(res, 200, { items });
 }
 
-async function registerStockEntry(req, res, [productId]) {
+async function readStockMovement(req, options) {
   const body = await parseJsonBody(req);
-  const validationError = validateStockMovementPayload(body);
+  const validationError = validateStockMovementPayload(body, options);
   if (validationError) {
     throw new ValidationError(validationError);
   }
+  return normalizeStockMovementPayload(body);
+}
 
+async function registerStockEntry(req, res, [productId]) {
+  const { quantidade, motivo, codigoLote, dataValidade, dataEntrada } = await readStockMovement(req);
   const item = await database.registerStockEntry(Number(productId), {
-    quantidade: Number(body.quantidade),
-    motivo: body.motivo ? String(body.motivo).trim() : null,
+    quantidade,
+    motivo,
+    codigoLote,
+    dataValidade,
+    dataEntrada,
   });
 
   sendJson(res, 200, { item });
 }
 
 async function registerStockExit(req, res, [productId]) {
-  const body = await parseJsonBody(req);
-  const validationError = validateStockMovementPayload(body, { requireSubtipo: true });
-  if (validationError) {
-    throw new ValidationError(validationError);
-  }
-
-  const item = await database.registerStockExit(Number(productId), {
-    quantidade: Number(body.quantidade),
-    subtipo: body.subtipo,
-    motivo: body.motivo ? String(body.motivo).trim() : null,
-  });
+  const { quantidade, subtipo, motivo, codigoLote } = await readStockMovement(req, { requireSubtipo: true });
+  const item = await database.registerStockExit(Number(productId), { quantidade, subtipo, motivo, codigoLote });
 
   sendJson(res, 200, { item });
 }

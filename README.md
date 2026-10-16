@@ -18,6 +18,18 @@ Se alguma variável obrigatória não estiver definida, o `docker compose` falha
 
 > Observação: o MySQL só aplica essas credenciais na criação do volume. Se o volume `mysql_data` já existir com as credenciais antigas, recrie-o com `docker compose down -v` (isso apaga os dados locais).
 
+### 1.2. Migrações do banco
+
+O `db/hortifruti_basico.sql` só roda na criação do volume e já traz o esquema atual. Um banco criado antes de uma migração precisa recebê-la manualmente, na ordem da numeração em `db/migrations/`. Faça um backup antes (`mysqldump`).
+
+- `001_stock_by_lot.sql`: estoque por lote (tabela `estoque_lote`, `lote_id` nas movimentações; remove `produtos.lote_id`). Retorno: `001_stock_by_lot.rollback.sql`, que mantém o saldo total, mas perde a divisão do saldo entre lotes.
+
+Exemplo com o serviço `mysql` do compose:
+
+```bash
+docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < db/migrations/001_stock_by_lot.sql
+```
+
 ## 2. Organização das Branches
 
 O projeto utiliza três níveis de branches:

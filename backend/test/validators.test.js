@@ -5,6 +5,7 @@ const {
   validateProductPayload,
   normalizeProductPayload,
   validateStockMovementPayload,
+  normalizeStockMovementPayload,
 } = require('../src/validators');
 
 const validProduct = {
@@ -99,4 +100,27 @@ test('validateStockMovementPayload requires a known subtipo for exits when requi
 
 test('validateStockMovementPayload rejects an unknown subtipo', () => {
   assert.match(validateStockMovementPayload({ quantidade: 5, subtipo: 'furto' }), /subtipo/);
+});
+
+test('validateProductPayload does not require lot fields on update', () => {
+  const updatePayload = { nome: 'Maçã', categoria: 'Fruta', preco_unitario: 8 };
+  assert.equal(validateProductPayload(updatePayload, { isUpdate: true }), null);
+  assert.equal(normalizeProductPayload(updatePayload, { isUpdate: true }).codigo_lote, undefined);
+});
+
+test('validateStockMovementPayload validates optional lot dates on entries', () => {
+  assert.equal(validateStockMovementPayload({ quantidade: 5, codigo_lote: 'L2', data_validade: '2026-11-01' }), null);
+  assert.match(validateStockMovementPayload({ quantidade: 5, data_validade: '2026-02-31' }), /data_validade/);
+  assert.match(
+    validateStockMovementPayload({ quantidade: 5, data_entrada: '2026-11-02', data_validade: '2026-11-01' }),
+    /anterior/
+  );
+});
+
+test('normalizeStockMovementPayload maps lot fields and trims text', () => {
+  const normalized = normalizeStockMovementPayload({ quantidade: '5', codigo_lote: ' L2 ', motivo: '  ' });
+  assert.equal(normalized.quantidade, 5);
+  assert.equal(normalized.codigoLote, 'L2');
+  assert.equal(normalized.motivo, null);
+  assert.equal(normalized.dataValidade, undefined);
 });

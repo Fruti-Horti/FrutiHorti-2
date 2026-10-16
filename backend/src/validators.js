@@ -11,36 +11,15 @@ const REQUIRED_FIELDS_ON_CREATE = [
   'quantidade_estoque',
 ];
 
-const REQUIRED_FIELDS_ON_UPDATE = ['nome', 'categoria', 'codigo_lote', 'data_validade', 'preco_unitario'];
+// Lot fields are not part of an update: lots change only through stock entries.
+const REQUIRED_FIELDS_ON_UPDATE = ['nome', 'categoria', 'preco_unitario'];
 
-function findMissingField(payload, requiredFields) {
-  return requiredFields.find((field) => {
-    const value = payload[field];
-    return value === undefined || value === null || String(value).trim() === '';
-  });
+function isBlank(value) {
+  return value === undefined || value === null || String(value).trim() === '';
 }
 
-function validateProductDates(payload) {
-  const dataValidade = String(payload.data_validade).trim();
-  if (!isValidDateString(dataValidade)) {
-    return 'data_validade deve ser uma data válida no formato YYYY-MM-DD';
-  }
-
-  if (!payload.data_entrada) {
-    return null;
-  }
-
-  const dataEntrada = String(payload.data_entrada).trim();
-  if (!isValidDateString(dataEntrada)) {
-    return 'data_entrada deve ser uma data válida no formato YYYY-MM-DD';
-  }
-
-  // YYYY-MM-DD strings compare chronologically.
-  if (dataValidade < dataEntrada) {
-    return 'data_validade não pode ser anterior à data_entrada';
-  }
-
-  return null;
+function findMissingField(payload, requiredFields) {
+  return requiredFields.find((field) => isBlank(payload[field]));
 }
 
 function normalizeOptionalText(value) {
@@ -50,6 +29,32 @@ function normalizeOptionalText(value) {
 
   const text = value === null ? '' : String(value).trim();
   return text || null;
+}
+
+function validateOptionalDate(payload, field) {
+  if (isBlank(payload[field]) || isValidDateString(String(payload[field]).trim())) {
+    return null;
+  }
+  return `${field} deve ser uma data válida no formato YYYY-MM-DD`;
+}
+
+// Validates lot dates when present; whether data_validade is required is up to the caller.
+function validateLotDates(payload) {
+  const formatError = validateOptionalDate(payload, 'data_validade') || validateOptionalDate(payload, 'data_entrada');
+  if (formatError) {
+    return formatError;
+  }
+
+  if (isBlank(payload.data_validade) || isBlank(payload.data_entrada)) {
+    return null;
+  }
+
+  // YYYY-MM-DD strings compare chronologically.
+  if (String(payload.data_validade).trim() < String(payload.data_entrada).trim()) {
+    return 'data_validade não pode ser anterior à data_entrada';
+  }
+
+  return null;
 }
 
 function validateProductPayload(payload, { isUpdate = false } = {}) {
@@ -63,9 +68,11 @@ function validateProductPayload(payload, { isUpdate = false } = {}) {
     return `Campo ${missingField} é obrigatório`;
   }
 
-  const dateError = validateProductDates(payload);
-  if (dateError) {
-    return dateError;
+  if (!isUpdate) {
+    const dateError = validateLotDates(payload);
+    if (dateError) {
+      return dateError;
+    }
   }
 
   const price = Number(payload.preco_unitario);
@@ -77,7 +84,7 @@ function validateProductPayload(payload, { isUpdate = false } = {}) {
     return 'quantidade_estoque deve ser um número inteiro não negativo';
   }
 
-  if (payload.quantidade_minima !== undefined && payload.quantidade_minima !== null) {
+  if (!isBlank(payload.quantidade_minima)) {
     const minima = Number(payload.quantidade_minima);
     if (!Number.isInteger(minima) || minima < 0) {
       return 'quantidade_minima deve ser um número inteiro não negativo';
@@ -91,20 +98,17 @@ function normalizeProductPayload(payload, { isUpdate = false } = {}) {
   const normalized = {
     nome: String(payload.nome).trim(),
     categoria: String(payload.categoria).trim(),
-    codigo_lote: String(payload.codigo_lote).trim(),
-    data_validade: String(payload.data_validade).trim(),
-    data_entrada: payload.data_entrada ? String(payload.data_entrada).trim() : undefined,
     preco_unitario: Number(payload.preco_unitario),
     perecivel: payload.perecivel !== false,
     // undefined means "not sent": updates keep the stored value instead of resetting it.
-    quantidade_minima:
-      payload.quantidade_minima !== undefined && payload.quantidade_minima !== null
-        ? Number(payload.quantidade_minima)
-        : undefined,
+    quantidade_minima: isBlank(payload.quantidade_minima) ? undefined : Number(payload.quantidade_minima),
     localizacao: normalizeOptionalText(payload.localizacao),
   };
 
   if (!isUpdate) {
+    normalized.codigo_lote = String(payload.codigo_lote).trim();
+    normalized.data_validade = String(payload.data_validade).trim();
+    normalized.data_entrada = normalizeOptionalText(payload.data_entrada) || undefined;
     normalized.quantidade_estoque = Number(payload.quantidade_estoque);
   }
 
@@ -129,7 +133,19 @@ function validateStockMovementPayload(payload, { requireSubtipo = false } = {}) 
     return 'subtipo é obrigatório para registrar saída de estoque';
   }
 
-  return null;
+  return validateLotDates(payload);
+}
+
+// codigo_lote is optional: entries without it go to the product's latest lot, exits without it use FEFO.
+function normalizeStockMovementPayload(payload) {
+  return {
+    quantidade: Number(payload.quantidade),
+    subtipo: payload.subtipo,
+    motivo: normalizeOptionalText(payload.motivo) || null,
+    codigoLote: normalizeOptionalText(payload.codigo_lote) || undefined,
+    dataValidade: normalizeOptionalText(payload.data_validade) || undefined,
+    dataEntrada: normalizeOptionalText(payload.data_entrada) || undefined,
+  };
 }
 
 module.exports = {
@@ -137,4 +153,5 @@ module.exports = {
   validateProductPayload,
   normalizeProductPayload,
   validateStockMovementPayload,
+  normalizeStockMovementPayload,
 };

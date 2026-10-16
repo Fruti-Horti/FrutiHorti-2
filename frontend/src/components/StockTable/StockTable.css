@@ -135,3 +135,32 @@
     font-size: 1.1rem;
     color: var(--solid-red);
 }
+
+.stockRowInactive {
+    opacity: 0.6;
+}
+
+.stockRowExpiredStock {
+    display: block;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--solid-red);
+}
+
+.stockRowExpiration.inactive {
+    background-color: var(--border-gray);
+    color: var(--text-gray);
+}
+
+.stockRowActionButton.lotEntry {
+    background-color: var(--solid-green);
+    opacity: 0.85;
+}
+
+.stockRowActionButton.deactivate {
+    background-color: var(--text-gray);
+}
+
+.stockRowActionButton.activate {
+    background-color: var(--solid-green);
+}

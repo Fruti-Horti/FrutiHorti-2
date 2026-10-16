@@ -77,33 +77,80 @@ function isExpired(dataValidade, referenceDate = new Date()) {
   return BLOCK_ON_EXPIRATION_DAY ? days <= 0 : days < 0;
 }
 
-function calculateStatusId({ dataValidade, quantidade }, referenceDate = new Date()) {
-  if (isExpired(dataValidade, referenceDate)) {
-    return STATUS_IDS.VENCIDO;
-  }
-
-  if (Number(quantidade) <= 0) {
-    return STATUS_IDS.ESGOTADO;
-  }
-
-  return STATUS_IDS.ATIVO;
+// FEFO order: first expired, first out. Ties keep the oldest lot first.
+function sortLotsByExpiration(lots) {
+  return [...lots].sort((first, second) => {
+    const byDate = toDateString(first.data_validade).localeCompare(toDateString(second.data_validade));
+    return byDate !== 0 ? byDate : first.lote_id - second.lote_id;
+  });
 }
 
-// Derives every date-dependent field at read time, so the status never depends on a stock movement.
-function describeProduct(product, referenceDate = new Date()) {
-  const quantidade = Number(product.quantidade_estoque || 0);
-  const dias = daysUntilExpiration(product.data_validade, referenceDate);
-  const derivedStatusId = calculateStatusId({ dataValidade: product.data_validade, quantidade }, referenceDate);
-  const status = product.status === STATUS_NAMES[STATUS_IDS.INATIVO] ? product.status : STATUS_NAMES[derivedStatusId];
+// The lot shown as the product's "current" lot: the next sellable one, then any lot with stock,
+// then the freshest lot when the product has no stock at all.
+function selectReferenceLot(sortedLots, referenceDate = new Date()) {
+  const withStock = sortedLots.filter((lot) => Number(lot.quantidade) > 0);
+  const sellable = withStock.find((lot) => !isExpired(lot.data_validade, referenceDate));
+  return sellable || withStock[0] || sortedLots[sortedLots.length - 1] || null;
+}
+
+function deriveStatusName({ storedStatus, totalQuantity, sellableQuantity }) {
+  if (storedStatus === STATUS_NAMES[STATUS_IDS.INATIVO]) {
+    return storedStatus;
+  }
+
+  if (totalQuantity <= 0) {
+    return STATUS_NAMES[STATUS_IDS.ESGOTADO];
+  }
+
+  if (sellableQuantity <= 0) {
+    return STATUS_NAMES[STATUS_IDS.VENCIDO];
+  }
+
+  return STATUS_NAMES[STATUS_IDS.ATIVO];
+}
+
+function describeLot(lot, referenceDate) {
+  return {
+    lote_id: lot.lote_id,
+    codigo_lote: lot.codigo_lote,
+    data_entrada: lot.data_entrada ? toDateString(lot.data_entrada) : null,
+    data_validade: toDateString(lot.data_validade),
+    quantidade: Number(lot.quantidade),
+    dias_para_vencer: daysUntilExpiration(lot.data_validade, referenceDate),
+    vencido: isExpired(lot.data_validade, referenceDate),
+  };
+}
+
+function sumQuantities(lots) {
+  return lots.reduce((total, lot) => total + lot.quantidade, 0);
+}
+
+// Derives every stock and date field at read time from the product's lots, so the status never
+// depends on a stock movement. codigo_lote/data_validade/data_entrada describe the reference lot and
+// keep the API contract used before stock by lot.
+function describeProduct(product, lots, referenceDate = new Date()) {
+  const describedLots = sortLotsByExpiration(lots).map((lot) => describeLot(lot, referenceDate));
+  const totalQuantity = sumQuantities(describedLots);
+  const expiredQuantity = sumQuantities(describedLots.filter((lot) => lot.vencido));
+  const referenceLot = selectReferenceLot(describedLots, referenceDate);
+  const dias = referenceLot ? referenceLot.dias_para_vencer : null;
 
   return {
     ...product,
-    data_validade: toDateString(product.data_validade),
-    data_entrada: product.data_entrada ? toDateString(product.data_entrada) : product.data_entrada,
-    status,
+    codigo_lote: referenceLot ? referenceLot.codigo_lote : null,
+    data_entrada: referenceLot ? referenceLot.data_entrada : null,
+    data_validade: referenceLot ? referenceLot.data_validade : null,
+    quantidade_estoque: totalQuantity,
+    quantidade_vencida: expiredQuantity,
+    status: deriveStatusName({
+      storedStatus: product.status,
+      totalQuantity,
+      sellableQuantity: totalQuantity - expiredQuantity,
+    }),
     dias_para_vencer: dias,
-    proximo_do_vencimento: dias >= 0 && dias <= EXPIRING_SOON_DAYS,
-    estoque_baixo: quantidade <= Number(product.quantidade_minima || 0),
+    proximo_do_vencimento: dias !== null && dias >= 0 && dias <= EXPIRING_SOON_DAYS,
+    estoque_baixo: totalQuantity <= Number(product.quantidade_minima || 0),
+    lotes: describedLots,
   };
 }
 
@@ -117,6 +164,8 @@ module.exports = {
   toDateString,
   isExpired,
   daysUntilExpiration,
-  calculateStatusId,
+  sortLotsByExpiration,
+  selectReferenceLot,
+  deriveStatusName,
   describeProduct,
 };
