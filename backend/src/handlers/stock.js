@@ -1,16 +1,10 @@
-const database = require('../database');
+const stockService = require('../services/stockService');
 const { sendJson, parseJsonBody } = require('../httpUtils');
 const { validateStockMovementPayload } = require('../validators');
 const { ValidationError } = require('../errors');
 
-// Expiration and low-stock fields are derived on every product read (see describeProduct).
 async function getStockSummary(req, res) {
-  const items = await database.listProducts();
-  sendJson(res, 200, { items });
-}
-
-async function listMovements(req, res, [productId]) {
-  const items = await database.listMovements(Number(productId));
+  const items = await stockService.getStockSummary();
   sendJson(res, 200, { items });
 }
 
@@ -21,7 +15,7 @@ async function registerStockEntry(req, res, [productId]) {
     throw new ValidationError(validationError);
   }
 
-  const item = await database.registerStockEntry(Number(productId), {
+  const item = await stockService.registerStockEntry(Number(productId), {
     quantidade: Number(body.quantidade),
     motivo: body.motivo ? String(body.motivo).trim() : null,
   });
@@ -36,7 +30,7 @@ async function registerStockExit(req, res, [productId]) {
     throw new ValidationError(validationError);
   }
 
-  const item = await database.registerStockExit(Number(productId), {
+  const item = await stockService.registerStockExit(Number(productId), {
     quantidade: Number(body.quantidade),
     subtipo: body.subtipo,
     motivo: body.motivo ? String(body.motivo).trim() : null,
@@ -45,4 +39,4 @@ async function registerStockExit(req, res, [productId]) {
   sendJson(res, 200, { item });
 }
 
-module.exports = { getStockSummary, listMovements, registerStockEntry, registerStockExit };
+module.exports = { getStockSummary, registerStockEntry, registerStockExit };

@@ -1,5 +1,6 @@
 const productHandlers = require('./handlers/products');
 const stockHandlers = require('./handlers/stock');
+const movementHandlers = require('./handlers/movements');
 const miscHandlers = require('./handlers/misc');
 
 const routes = [
@@ -13,7 +14,7 @@ const routes = [
   { method: 'DELETE', pattern: /^\/products\/(\d+)$/, handler: productHandlers.deleteProduct },
 
   { method: 'GET', pattern: /^\/stock$/, handler: stockHandlers.getStockSummary },
-  { method: 'GET', pattern: /^\/products\/(\d+)\/movements$/, handler: stockHandlers.listMovements },
+  { method: 'GET', pattern: /^\/products\/(\d+)\/movements$/, handler: movementHandlers.listMovements },
   { method: 'POST', pattern: /^\/products\/(\d+)\/stock\/entries$/, handler: stockHandlers.registerStockEntry },
   { method: 'POST', pattern: /^\/products\/(\d+)\/stock\/exits$/, handler: stockHandlers.registerStockExit },
 ];
